@@ -1,0 +1,45 @@
+// Mestre-sala: orbita o porta-bandeira
+const int ENA = 5, IN1 = 2, IN2 = 3;
+const int ENB = 6, IN3 = 4, IN4 = 7;
+const int trigPin = 8, echoPin = 9;
+
+const int baseSpeed = 180;     // velocidade média
+const int targetDist = 50;     // distância desejada em cm
+const float Kp = 1.5;          // ganho proporcional para correção
+
+void setup() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(ENA, OUTPUT); pinMode(ENB, OUTPUT);
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+}
+
+long readDistance() {
+  // envia pulso de 10μs
+  digitalWrite(trigPin, LOW); delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long dur = pulseIn(echoPin, HIGH, 30000);
+  return dur ? dur * 0.034/2 : 300; // cm (timeout ~300 cm)
+}
+
+void loop() {
+  long dist = readDistance();
+  int error = dist - targetDist;
+  // ajuste de diferença de velocidade
+  int delta = Kp * error;
+  int speedL = constrain(baseSpeed - delta, 0, 255);
+  int speedR = constrain(baseSpeed + delta, 0, 255);
+
+  // comandos de direção pra frente
+  analogWrite(ENA, speedL);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  analogWrite(ENB, speedR);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  delay(50);
+}
