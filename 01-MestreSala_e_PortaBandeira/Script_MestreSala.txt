@@ -1,7 +1,7 @@
 // Mestre-sala: orbita o porta-bandeira
 const int ENA = 5, IN1 = 2, IN2 = 3;
 const int ENB = 6, IN3 = 4, IN4 = 7;
-const int trigPin = 8, echoPin = 9;
+const int trigPin = 8, echoPin = 10;
 
 const int baseSpeed = 180;     // velocidade média
 const int targetDist = 50;     // distância desejada em cm
