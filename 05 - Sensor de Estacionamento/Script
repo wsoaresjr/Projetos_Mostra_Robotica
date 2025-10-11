@@ -1,0 +1,186 @@
+// ==== Configurações de pinos ====
+const int TRIG_PIN   = 9;
+const int ECHO_PIN   = 10;
+
+const int LED_VERDE  = 3;
+const int LED_AMAR   = 4;
+const int LED_VERM   = 5;
+
+const int BUZZER_PIN = 6;
+
+// ====== Parâmetros de distância (cm) ======
+const float LIMITE_VERDE   = 40.0; // acima disso: verde contínuo
+const float LIMITE_VERMELHO = 20.0; // abaixo ou igual: vermelho + buzzer rápido
+// Entre 20 e 40: amarelo + buzzer lento
+
+// ====== Temporizações (ms) ======
+const unsigned long BLINK_AMARELO_MS = 500; // pisca médio
+const unsigned long BLINK_VERMELHO_MS = 200; // pisca rápido
+const unsigned long BEEP_LENTO_MS = 500;   // buzzer lento
+const unsigned long BEEP_RAPIDO_MS = 150;  // buzzer rápido
+
+// ====== Buzzer passivo x ativo ======
+// true  -> buzzer PASSIVO (usa tone() com frequência)
+// false -> buzzer ATIVO (liga/desliga com digitalWrite)
+const bool BUZZER_PASSIVO = true;
+const unsigned int BUZZER_FREQ_HZ_LENTO = 1800; // frequência do beep (passivo)
+const unsigned int BUZZER_FREQ_HZ_RAPIDO = 2200;
+
+// Controle de pisca/beep (não-bloqueante)
+unsigned long lastToggleAmarelo = 0;
+bool estadoAmarelo = false;
+
+unsigned long lastToggleVermelho = 0;
+bool estadoVermelho = false;
+
+unsigned long lastToggleBeep = 0;
+bool estadoBeep = false;
+
+// ====== Utilidades ======
+
+// Mede distância (cm) com o HC-SR04
+float medirDistanciaCm() {
+  // pulso curto no TRIG
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // duração do pulso no ECHO (em microssegundos)
+  unsigned long dur = pulseIn(ECHO_PIN, HIGH, 30000UL); // timeout 30 ms (~5 m)
+  if (dur == 0) {
+    return -1; // sem leitura (timeout)
+  }
+
+  // velocidade do som ~0.034 cm/us; divide por 2 (vai e volta)
+  float distancia = (dur * 0.034f) / 2.0f;
+  return distancia;
+}
+
+// Faz média simples de N leituras para reduzir "tremidas"
+float medirDistanciaMediaCm(byte n = 3) {
+  float soma = 0;
+  byte validas = 0;
+  for (byte i = 0; i < n; i++) {
+    float d = medirDistanciaCm();
+    if (d > 0) { soma += d; validas++; }
+    delay(20);
+  }
+  if (validas == 0) return -1;
+  return soma / validas;
+}
+
+// Desliga LEDs e buzzer
+void tudoOff() {
+  digitalWrite(LED_VERDE, LOW);
+  digitalWrite(LED_AMAR, LOW);
+  digitalWrite(LED_VERM, LOW);
+
+  if (BUZZER_PASSIVO) {
+    noTone(BUZZER_PIN);
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+  estadoBeep = false;
+}
+
+// Beep não-bloqueante (liga/desliga por intervalo)
+void buzzerBeep(unsigned long intervaloMs, unsigned int freqHz) {
+  unsigned long agora = millis();
+  if (agora - lastToggleBeep >= intervaloMs) {
+    lastToggleBeep = agora;
+    estadoBeep = !estadoBeep;
+
+    if (BUZZER_PASSIVO) {
+      if (estadoBeep) tone(BUZZER_PIN, freqHz);
+      else noTone(BUZZER_PIN);
+    } else {
+      digitalWrite(BUZZER_PIN, estadoBeep ? HIGH : LOW);
+    }
+  }
+}
+
+// Pisca LED (não-bloqueante) em pino com intervalo dado
+void piscaLed(int pino, bool &estado, unsigned long &ultimoToggle, unsigned long intervaloMs) {
+  unsigned long agora = millis();
+  if (agora - ultimoToggle >= intervaloMs) {
+    ultimoToggle = agora;
+    estado = !estado;
+    digitalWrite(pino, estado ? HIGH : LOW);
+  }
+}
+
+void setup() {
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  pinMode(LED_VERDE, OUTPUT);
+  pinMode(LED_AMAR, OUTPUT);
+  pinMode(LED_VERM, OUTPUT);
+
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  tudoOff();
+
+  // Inicial opcional: verde aceso indicando pronto
+  digitalWrite(LED_VERDE, HIGH);
+  delay(800);
+  digitalWrite(LED_VERDE, LOW);
+}
+
+void loop() {
+  float dist = medirDistanciaMediaCm(3);
+
+  // Se leitura inválida, apaga tudo (ou mantenha último estado)
+  if (dist < 0) {
+    tudoOff();
+    return;
+  }
+
+  // --- Estado VERDE: longe ---
+  if (dist > LIMITE_VERDE) {
+    // Verde ON contínuo
+    digitalWrite(LED_VERDE, HIGH);
+    digitalWrite(LED_AMAR, LOW);
+    digitalWrite(LED_VERM, LOW);
+
+    // Buzzer OFF
+    if (BUZZER_PASSIVO) noTone(BUZZER_PIN);
+    else digitalWrite(BUZZER_PIN, LOW);
+    estadoBeep = false;
+
+    // Reset piscas para recomeçarem sincronizados quando mudarem de estado
+    estadoAmarelo = false; lastToggleAmarelo = millis();
+    estadoVermelho = false; lastToggleVermelho = millis();
+  }
+  // --- Estado AMARELO: atenção ---
+  else if (dist > LIMITE_VERMELHO && dist <= LIMITE_VERDE) {
+    // Verde OFF
+    digitalWrite(LED_VERDE, LOW);
+    // Amarelo piscando médio
+    piscaLed(LED_AMAR, estadoAmarelo, lastToggleAmarelo, BLINK_AMARELO_MS);
+    // Vermelho OFF
+    digitalWrite(LED_VERM, LOW);
+    estadoVermelho = false;
+
+    // Buzzer lento
+    buzzerBeep(BEEP_LENTO_MS, BUZZER_PASSIVO ? BUZZER_FREQ_HZ_LENTO : 0);
+  }
+  // --- Estado VERMELHO: alerta ---
+  else { // dist <= LIMITE_VERMELHO
+    // Verde OFF, Amarelo OFF
+    digitalWrite(LED_VERDE, LOW);
+    digitalWrite(LED_AMAR, LOW);
+    estadoAmarelo = false;
+
+    // Vermelho piscando rápido
+    piscaLed(LED_VERM, estadoVermelho, lastToggleVermelho, BLINK_VERMELHO_MS);
+
+    // Buzzer rápido
+    buzzerBeep(BEEP_RAPIDO_MS, BUZZER_PASSIVO ? BUZZER_FREQ_HZ_RAPIDO : 0);
+  }
+
+  // Pequeno descanso para estabilidade
+  delay(10);
+}
