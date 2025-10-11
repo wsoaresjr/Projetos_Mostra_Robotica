@@ -1,0 +1,58 @@
+return pulseIn(outPin, LOW);
+}
+
+// —– Detecta “vítima” vermelha —–
+bool detectaVitima() {
+long r = leCor('R');
+long g = leCor('G');
+long b = leCor('B');
+// calibrar estes valores no seu ambiente
+if (r < 30 && g > 40 && b > 40) {
+Serial.println("Vitima detectada!");
+return true;
+}
+return false;
+}
+
+// —– Rotina de resgate —–
+void rotinaResgate() {
+paraRobô();
+// abre garra
+servoGarra.write(90);
+delay(400);
+// avança para encaixar o token
+moveFrente(180);
+delay(600);
+paraRobô();
+// fecha garra
+servoGarra.write(0);
+delay(400);
+// retorna
+moveTras(200);
+delay(600);
+paraRobô();
+}
+
+void loop() {
+// 1) primeiro, checa se está próximo de obstáculo/vítima
+if (leDistancia() < distObstaculo && detectaVitima()) {
+rotinaResgate();
+return;
+}
+
+// 2) senão, segue a linha
+int esq = analogRead(sensorEsq);
+int mid = analogRead(sensorMid);
+int dir = analogRead(sensorDir);
+
+if (mid < limiarLinha) {
+moveFrente();
+} else if (esq < limiarLinha) {
+giraEsq();
+} else if (dir < limiarLinha) {
+giraDir();
+} else {
+// linha perdida: para e busca
+paraRobô();
+}
+}
